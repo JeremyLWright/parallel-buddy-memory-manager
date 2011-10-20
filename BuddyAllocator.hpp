@@ -15,12 +15,19 @@ template <typename T, size_t numBlocks=200>
 class BuddyAllocator {
     public:
         enum compileConstants {blockSize=sizeof(T)};
+        
+        struct Block {
+            uint8_t padding[blockSize];
+        };
+
+        typedef Block* BlockPtr;
+
         BuddyAllocator()
         {
-            memoryPool = new uint8_t[blockSize*numBlocks];
+            memoryPool = new uint8_t[sizeof(Block)*numBlocks];
         }
     protected:
-        uint8_t* memoryPool;
+        BlockPtr memoryPool;
     private:
 
 };
