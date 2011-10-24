@@ -13,7 +13,9 @@
 #include <list>
 #include <cmath>
 #include <boost/integer/static_log2.hpp>
+#include <queue>
 
+using std::queue;
 using std::list;
 
 /**
@@ -64,6 +66,10 @@ class BuddyAllocator {
         {
             memoryPool = new T[numBlocks];
             freeList[freeListOrder].push_back(memoryPool);
+            for(size_t i = 0; i < freeListOrder+1; ++i)
+            {
+                pthread_mutex_init(freeList[i].lock);
+            } 
         }
 
         BuddyAllocator(BuddyAllocator const &) throw()
@@ -75,6 +81,13 @@ class BuddyAllocator {
             size_t level = log(size)/log(2);
             assert(level <= freeListOrder);
             return level;
+        }
+
+        inline size_t level_to_size(size_t level)
+        {
+            size_t size = pow(2, level);
+            assert(level <= freeListOrder);
+            return size;
         }
 
         template <typename U>
@@ -121,20 +134,111 @@ class BuddyAllocator {
 
     private:
         BlockPtr memoryPool;
-        list<BlockPtr> freeList[freeListOrder+1];
+      
+        struct freeListHead {
+            size_t Nrequested;
+            queue<BlockPtr> waitingRequests;
+            list<BlockPtr> freeBlocks;
+            pthread_mutex_t lock;
+        };
+
+        freeListHead freeList[freeListOrder+1];
+
+        inline bool buddyIsFree(BlockPtr M, BlockPtr& Buddy, size_t level)
+        {
+            return true;
+        }
 
         void allocateBlock(BlockPtr& p, size_t level)
         {
-            p = memoryPool;
+            assert(level <= freeListOrder);
+            bool doSplit = false;
+            //lock freelist[i]
+            if(freeList[level].freeBlocks.empty())
+            {
+                //No blocks, so wait until some are available
+                freeList[level].waitingRequests.push_back(*p);
+                if(freeList[level].waitingRequests.size() > freeList[level].Nrequested)
+                {
+                    doSplit = true;
+                    freeList[level].Nrequested += 2;
+                }
+                //unlock freelist i
+                if(doSplit)
+                {
+                    splitBlock(level + 1);
+                    //sleep
+                }
+            }
+            else
+            {
+                //Get a block from the head of the free list
+                //unlock freeList[level]
+            }
         }
 
-        void releaseBlock(BlockPtr p, size_t level)
+        void releaseBlock(BlockPtr M, size_t level)
         {
-
+            //lock freelist level
+            if(freeList[level].waitingRequests > 0)
+            {
+                //Give to the blocked request if possible
+                BlockPtr P = freeList[level].waitingRequests.front();
+                freeList[level].waitingRequests.pop_front();
+                //unlock freelist level
+                //wakeup P and give it M
+            }
+            else
+            {
+                BlockPtr buddy = 0;
+                if(buddyIsFree(M, buddy, level))
+                {
+                    //remove buddy from free list
+                    //unlock freelist[i]
+                    //combine M and buddy
+                    releaseBlock(min(M,buddy), level+1);
+                }
+                else
+                {
+                    //Don't combine
+                    //add M to the free list
+                    //unlock freelist[i]
+                }
+            }
         }
 
         void splitBlock(size_t level)
         {
+            BlockPtr p = 0;
+            allocateBlock(p, level);
+            BlockPtr M = p;
+            BlockPtr B = p+(level_to_size(level)/2);
+            //lock free list-1
+            freeList[level-1].Nrequested -= 2;
+            /* Satisfying the request for 2 */
+            if(freeList[level-1].waitingRequests.size() > 0)
+            {
+                BlockPtr p = freeList[level-1].waitingRequests.front();
+                freeList[level-1].waitingRequests.pop_front();
+                //Wake up P and give it M
+                if(freeList[level-1].waitingRequests.size() >0)
+                {
+                    BlockPtr q = freeList[level-1].waitingRequests.front();
+                    freeList[level-1].waitingRequests.pop_front();
+                    //Wake up Q and give it B
+                }
+                else
+                {
+                    freeList[level-1].freeBlocks.push_back(B); //Add B to the free list
+                }
+                //unlock free list-1
+                //Wake up remembered process
+            }
+            else
+            {
+                //unlock free list-1
+                release(level, combine(M,B));
+            }
 
         }
 

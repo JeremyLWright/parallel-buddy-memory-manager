@@ -9,7 +9,16 @@ TEST(MultiplyTest, NormalTest)
     EXPECT_EQ(1, 1);
 }
 
-TEST(SanityCheck, BlockSize)
+TEST(AllocatorInterface, VectorMultipleItem)
+{
+    BuddyAllocator<int> myAlloc;
+    vector<int, BuddyAllocator<int> > myVec;
+    for(int i=0; i < 10; i++)
+        myVec.push_back(i);
+    for(int i=0; i < 10; i++)
+        EXPECT_EQ(myVec[i], i);
+}
+TEST(AllocatorInterface, Vector1Item)
 {
     BuddyAllocator<int> myAlloc;
     vector<int, BuddyAllocator<int> > myVec;
