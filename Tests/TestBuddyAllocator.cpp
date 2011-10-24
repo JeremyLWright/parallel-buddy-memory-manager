@@ -17,4 +17,10 @@ TEST(SanityCheck, BlockSize)
     EXPECT_EQ(myVec.back(), 5);
 }
 
+TEST(FreeList, StaticSize)
+{
+    BuddyAllocator<int, 200> myAlloc;
+    EXPECT_EQ(myAlloc.freeListOrder, 7);
+}
+
 

@@ -10,13 +10,24 @@
 
 #include <stdint.h>
 #include <cstddef>
+#include <list>
+#include <cmath>
+#include <boost/integer/static_log2.hpp>
 
+using std::list;
+
+/**
+ * @warning This class is may not be used as a base class.
+ */
 template <typename T, size_t numBlocks=200>
 class BuddyAllocator {
     public:
         // The enum is just a way to get the size value at compile time instead
         // of at runtime. 
-        enum compileConstants {blockSize=sizeof(T)};
+        enum compileConstants {
+            blockSize=sizeof(T),
+            freeListOrder = ((boost::static_log2<numBlocks>::value))
+        };
          
         struct Block {
             uint8_t padding[blockSize];
@@ -32,8 +43,8 @@ class BuddyAllocator {
         typedef T value_type;  
  
  
-        typedef Block* BlockPtr;
-        typedef Block const * BlockConstPtr;
+        typedef T* BlockPtr;
+        typedef T const * BlockConstPtr;
         template <typename U>
             struct rebind{
                 typedef BuddyAllocator<T, numBlocks> other;
@@ -51,11 +62,19 @@ class BuddyAllocator {
       
         BuddyAllocator() throw()
         {
-            memoryPool = new Block[numBlocks];
+            memoryPool = new T[numBlocks];
+            freeList[freeListOrder].push_back(memoryPool);
         }
 
         BuddyAllocator(BuddyAllocator const &) throw()
         {
+        }
+
+        inline size_t size_to_level(size_t size)
+        {
+            size_t level = log(size)/log(2);
+            assert(level <= freeListOrder);
+            return level;
         }
 
         template <typename U>
@@ -63,8 +82,9 @@ class BuddyAllocator {
             {
             }
 
-        virtual ~BuddyAllocator()
+        ~BuddyAllocator()
         {
+            delete [] memoryPool;
         }
 
         // Return the maximum allocatable size
@@ -76,7 +96,9 @@ class BuddyAllocator {
         //Allocate but do not initialize num elements of type T
         pointer allocate(size_type num, const_pointer hint = 0)
         {
-            return static_cast<pointer>(::operator new(num*sizeof(T)));
+            BlockPtr p = 0;
+            allocateBlock(p, size_to_level(num));
+            return static_cast<pointer>(p);
         }
 
         //Initialize elements of allocated storage p with value 
@@ -94,12 +116,28 @@ class BuddyAllocator {
        //deallocate storage p of deleted items
        void deallocate(pointer p, size_t num)
        {
-           //Free memory back to the pool
+           releaseBlock(static_cast<BlockPtr>(p), size_to_level(num));
        }
 
-    protected:
-        BlockPtr memoryPool;
     private:
+        BlockPtr memoryPool;
+        list<BlockPtr> freeList[freeListOrder+1];
+
+        void allocateBlock(BlockPtr& p, size_t level)
+        {
+            p = memoryPool;
+        }
+
+        void releaseBlock(BlockPtr p, size_t level)
+        {
+
+        }
+
+        void splitBlock(size_t level)
+        {
+
+        }
+
 
 };
 

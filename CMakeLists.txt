@@ -1,6 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 project(ParallelBinaryBuddy)
 find_package(GTest)
+find_package(Boost)
 
 SET(CMAKE_CXX_FLAGS_DEBUG "-g3 -ggdb -Wall -fopenmp")
 include_directories(.)
