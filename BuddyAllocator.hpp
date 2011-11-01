@@ -35,40 +35,16 @@ class BuddyAllocator {
             uint8_t padding[blockSize];
         };
 
-        /* Types for the STL interface */
-        typedef size_t size_type;
-        typedef ptrdiff_t difference_type;
-        typedef T* pointer;
-        typedef T const * const_pointer;
-        typedef T& reference;
-        typedef T const & const_reference;
-        typedef T value_type;  
- 
- 
-        typedef T* BlockPtr;
-        typedef T const * BlockConstPtr;
-        template <typename U>
-            struct rebind{
-                typedef BuddyAllocator<T, numBlocks> other;
-            };
-
-        pointer address(reference value) const
-        {
-            return &value;
-        }
-        
-        const_pointer address(const_reference value) const
-        {
-            return &value;
-        }
-      
+        typedef Block* BlockPtr;
+        typedef Block const * BlockConstPtr;
+            
         BuddyAllocator() throw()
         {
-            memoryPool = new T[numBlocks];
-            freeList[freeListOrder].push_back(memoryPool);
+            memoryPool = new Block[numBlocks];
+            freeList[freeListOrder].freeBlocks.push_back(memoryPool);
             for(size_t i = 0; i < freeListOrder+1; ++i)
             {
-                pthread_mutex_init(freeList[i].lock);
+                pthread_mutex_init(&(freeList[i].lock), NULL);
             } 
         }
 
@@ -101,35 +77,34 @@ class BuddyAllocator {
         }
 
         // Return the maximum allocatable size
-        size_type max_size() const throw()
+        size_t max_size() const throw()
         {
             return sizeof(sizeof(Block)*numBlocks);
         }
 
         //Allocate but do not initialize num elements of type T
-        pointer allocate(size_type num, const_pointer hint = 0)
+        BlockPtr allocate(size_t num, BlockConstPtr hint = 0)
         {
             BlockPtr p = 0;
             allocateBlock(p, size_to_level(num));
-            return static_cast<pointer>(p);
+            return p;
         }
 
         //Initialize elements of allocated storage p with value 
-        void construct(pointer p, const T& value)
+        void construct(BlockPtr p, const T& value)
         {
-            new(static_cast<void*>(p))T(value);
         }
 
         //destroy elements f  initialized storage p
-        void destroy(pointer p)
+        void destroy(BlockPtr p)
         {
             p->~T();
         }
 
        //deallocate storage p of deleted items
-       void deallocate(pointer p, size_t num)
+       void deallocate(BlockPtr p, size_t num)
        {
-           releaseBlock(static_cast<BlockPtr>(p), size_to_level(num));
+           releaseBlock(p, size_to_level(num));
        }
 
     private:
@@ -157,7 +132,7 @@ class BuddyAllocator {
             if(freeList[level].freeBlocks.empty())
             {
                 //No blocks, so wait until some are available
-                freeList[level].waitingRequests.push_back(*p);
+                freeList[level].waitingRequests.push(p);
                 if(freeList[level].waitingRequests.size() > freeList[level].Nrequested)
                 {
                     doSplit = true;
@@ -207,6 +182,16 @@ class BuddyAllocator {
             }
         }
 
+        void release(size_t level, BlockPtr p)
+        {
+
+        }
+
+        BlockPtr combine(BlockPtr A, BlockPtr B)
+        {
+
+        }
+
         void splitBlock(size_t level)
         {
             BlockPtr p = 0;
@@ -219,12 +204,12 @@ class BuddyAllocator {
             if(freeList[level-1].waitingRequests.size() > 0)
             {
                 BlockPtr p = freeList[level-1].waitingRequests.front();
-                freeList[level-1].waitingRequests.pop_front();
+                freeList[level-1].waitingRequests.pop();
                 //Wake up P and give it M
                 if(freeList[level-1].waitingRequests.size() >0)
                 {
                     BlockPtr q = freeList[level-1].waitingRequests.front();
-                    freeList[level-1].waitingRequests.pop_front();
+                    freeList[level-1].waitingRequests.pop();
                     //Wake up Q and give it B
                 }
                 else
@@ -241,6 +226,7 @@ class BuddyAllocator {
             }
 
         }
+
 
 
 };

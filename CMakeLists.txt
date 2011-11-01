@@ -6,7 +6,7 @@ find_package(Boost)
 SET(CMAKE_CXX_FLAGS_DEBUG "-g3 -ggdb -Wall -fopenmp")
 include_directories(.)
 
-add_executable(buddyDriver main.cpp)
+add_executable(buddyDriver Driver/main.cpp)
 
 if(GTEST_FOUND)
     add_custom_target(test 

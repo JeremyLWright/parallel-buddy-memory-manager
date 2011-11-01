@@ -12,14 +12,15 @@ TEST(MultiplyTest, NormalTest)
 TEST(AllocatorInterface, VectorMultipleItem)
 {
     BuddyAllocator<int> myAlloc;
-    BuddyAllocator<int>::BlockPtr handles[10];
+    list<int, BuddyAllocator<int> > myList;
     for(int i=0; i < 10; i++)
-        handles[i] = myAlloc.allocate(1);
-
-    for(int i = 0; i < 10; i++)
-        EXPECT_NE(1, 0);
+        myList.push_back(i);
+    int j = 0;
+    for(list<int>::const_iterator i = myList.begin(); 
+            i != myList.end(); 
+            ++i, j++)
+        EXPECT_EQ(*i, j);
 }
-/*
 TEST(AllocatorInterface, Vector1Item)
 {
     BuddyAllocator<int> myAlloc;
@@ -32,6 +33,6 @@ TEST(FreeList, StaticSize)
 {
     BuddyAllocator<int, 200> myAlloc;
     EXPECT_EQ(myAlloc.freeListOrder, 7);
-}*/
+}
 
 
