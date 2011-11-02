@@ -163,7 +163,9 @@ class BuddyAllocator {
                 if(doSplit)
                 {
                     splitBlock(level + 1);
-                  //  pthread_mutex_lock(&selfPending.wait);
+#if WORKING_THROUGH_DEADLOCK_ISSUE
+                    pthread_mutex_lock(&selfPending.wait);
+#endif
                 }
             }
             else
