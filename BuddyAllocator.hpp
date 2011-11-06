@@ -17,6 +17,9 @@
 #include <queue>
 #include <pthread.h>
 #include <algorithm>
+#include <semaphore.h>
+#include <iostream>
+using namespace std;
 using std::queue;
 using std::list;
 using std::min;
@@ -41,10 +44,6 @@ class BuddyAllocator {
         BuddyAllocator()
         {
             freeList[freeListOrder].freeBlocks.push_back(memoryPool);
-            for(size_t i = 0; i < freeListOrder+1; ++i)
-            {
-                pthread_mutex_init(&(freeList[i].lock), NULL);
-            } 
         }
 
       
@@ -63,6 +62,7 @@ class BuddyAllocator {
         {
             BlockPtr p = 0;
             allocateBlock(p, size_to_level(num));
+            assert(p != 0);
             return p;
         }
 
@@ -102,17 +102,21 @@ class BuddyAllocator {
         struct MemoryRequest {
             MemoryRequest()
             {
-                pthread_mutex_init(&wait, NULL);
-                pthread_mutex_lock(&wait); //Lock so the process will sleep immediately
+                sem_init(&wait, 0, 1);
                 request = NULL;
             }
-            pthread_mutex_t wait;
+            sem_t wait;
             BlockPtr request;
         };
       
         struct freeListHead {
+            freeListHead()
+            {
+                Nrequested = 0;
+                pthread_mutex_init(&lock, NULL);
+            }
             size_t Nrequested;
-            queue<MemoryRequest> waitingRequests;
+            queue<MemoryRequest*> waitingRequests;
             list<BlockPtr> freeBlocks;
             pthread_mutex_t lock;
         };
@@ -153,7 +157,7 @@ class BuddyAllocator {
             {
                 //No blocks, so wait until some are available
                 MemoryRequest selfPending;
-                freeList[level].waitingRequests.push(selfPending);
+                freeList[level].waitingRequests.push(&selfPending);
                 if(freeList[level].waitingRequests.size() > freeList[level].Nrequested)
                 {
                     doSplit = true;
@@ -163,10 +167,9 @@ class BuddyAllocator {
                 if(doSplit)
                 {
                     splitBlock(level + 1);
-#if WORKING_THROUGH_DEADLOCK_ISSUE
-                    pthread_mutex_lock(&selfPending.wait);
-#endif
+                    sem_wait(&selfPending.wait);
                 }
+                p = selfPending.request;
             }
             else
             {
@@ -174,6 +177,7 @@ class BuddyAllocator {
                 freeList[level].freeBlocks.pop_front();
                 unlock(level);
             }
+            assert(p != 0);
         }
 
         void releaseBlock(BlockPtr M, size_t level)
@@ -182,11 +186,11 @@ class BuddyAllocator {
             if(freeList[level].waitingRequests.size() > 0)
             {
                 //Give to the blocked request if possible
-                MemoryRequest P = freeList[level].waitingRequests.front();
+                MemoryRequest* P = freeList[level].waitingRequests.front();
                 freeList[level].waitingRequests.pop();
                 unlock(level);
-                P.request = M;
-                pthread_mutex_unlock(&P.wait);
+                P->request = M;
+                sem_post(&P->wait);
             }
             else
             {
@@ -220,27 +224,25 @@ class BuddyAllocator {
             BlockPtr M = p;
             BlockPtr B = p+(level_to_size(level)/2);
             lock(level-1);
-            MemoryRequest remembered;
             freeList[level-1].Nrequested -= 2;
             /* Satisfying the request for 2 */
             if(freeList[level-1].waitingRequests.size() > 0)
             {
-                remembered = freeList[level-1].waitingRequests.front();
+                MemoryRequest* remembered = freeList[level-1].waitingRequests.front();
+                remembered->request = M;
                 freeList[level-1].waitingRequests.pop();
-                remembered.request = M;
                 
                 if(freeList[level-1].waitingRequests.size() >0)
                 {
-                    remembered = freeList[level-1].waitingRequests.front();
+                    remembered->request = B;
                     freeList[level-1].waitingRequests.pop();
-                    remembered.request = B;
                 }
                 else
                 {
                     freeList[level-1].freeBlocks.push_back(B); //Add B to the free list
                 }
                 unlock(level-1);
-                pthread_mutex_unlock(&remembered.wait);
+                sem_post(&remembered->wait);
             }
             else
             {
