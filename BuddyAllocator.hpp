@@ -159,9 +159,13 @@ class BuddyAllocator {
         {
             if(level > freeListOrder)
             {
+                //Clean up the freeList requests before we freak out
+                for(size_t i = 0; i < freeListOrder; ++i)
+                {
+                    freeList[i].waitingRequests.pop();
+                }
                 throw std::bad_alloc();
             }
-            bool doSplit = false;
             lock(level);
             if(freeList[level].freeBlocks.empty())
             {
@@ -170,16 +174,12 @@ class BuddyAllocator {
                 freeList[level].waitingRequests.push(&selfPending);
                 if(freeList[level].waitingRequests.size() > freeList[level].Nrequested)
                 {
-                    doSplit = true;
                     freeList[level].Nrequested += 2;
-                }
-                unlock(level);
-                if(doSplit)
-                {
+                    unlock(level);
                     splitBlock(level + 1);
                     sem_wait(&selfPending.wait);
+                    p = selfPending.request;
                 }
-                p = selfPending.request;
             }
             else
             {
@@ -243,7 +243,7 @@ class BuddyAllocator {
                 MemoryRequest* remembered = freeList[level-1].waitingRequests.front();
                 remembered->request = M;
                 freeList[level-1].waitingRequests.pop();
-                
+
                 if(freeList[level-1].waitingRequests.size() >0)
                 {
                     MemoryRequest* remembered = freeList[level-1].waitingRequests.front();

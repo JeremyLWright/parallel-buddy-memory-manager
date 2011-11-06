@@ -96,12 +96,11 @@ TEST_F(TestBuddyAllocator, Deallocate)
     {
         EXPECT_EQ(*(handles[i]), i);
     }
-    
-    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc); //Max out the allocator
+
+    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc); //Get 1 extra item to overload the allocator.
 
     //Release 1 block
     LargeAlloc.deallocate(handles[0], 1);
-    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc); //Max out the allocator
-
+    EXPECT_NO_THROW(LargeAlloc.allocate(1)); //Allocate 1 more object to max out the allocator
 }
 
