@@ -15,7 +15,7 @@ if(GTEST_FOUND)
         COMMAND test_buddy
         DEPENDS test_buddy)
     add_executable(test_buddy Tests/TestBuddyAllocator.cpp)
-    target_link_libraries(test_buddy ${GTEST_BOTH_LIBRARIES} pthread)
+    target_link_libraries(test_buddy ${GTEST_BOTH_LIBRARIES} pthread gomp)
     ADD_TEST(SimpleTest ${CMAKE_CURRENT_BINARY_DIR}/test_buddy --gtest_output=xml)
 
     add_custom_target(coverage

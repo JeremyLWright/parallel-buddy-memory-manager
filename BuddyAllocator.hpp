@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <semaphore.h>
 #include <iostream>
+#include <sstream>
 using namespace std;
 using std::queue;
 using std::list;
@@ -43,9 +44,11 @@ class BuddyAllocator {
         BuddyAllocator()
         {
             numBlocks = static_cast<size_t>(pow(2,freeListOrder));
-
+#if USE_BIG_LOCK
+            pthread_mutex_init(&bigLock, 0);
+#endif
             memoryPool = new Block[numBlocks];
-            freeList[freeListOrder].freeBlocks.push_back(memoryPool);
+            freeList[freeListOrder].addFreeBlock(memoryPool);
         }
 
       
@@ -63,12 +66,28 @@ class BuddyAllocator {
         {
             return  numBlocks; 
         }
-
+#if USE_BIG_LOCK
+        pthread_mutex_t bigLock;
+#endif
         //Allocate but do not initialize num elements of type T
         BlockPtr allocate(size_t num, BlockConstPtr hint = 0)
         {
             BlockPtr p = 0;
+#if USE_BIG_LOCK
+            pthread_mutex_lock(&bigLock);
+            try
+            {
+#endif
             allocateBlock(p, size_to_level(num));
+#if USE_BIG_LOCK
+            } catch(std::bad_alloc& e)
+            {
+
+                pthread_mutex_unlock(&bigLock);
+                throw e;
+            }
+            pthread_mutex_unlock(&bigLock);
+#endif
             assert(p != 0);
             return p;
         }
@@ -107,6 +126,7 @@ class BuddyAllocator {
         BlockPtr memoryPool;
 
         struct MemoryRequest {
+            typedef MemoryRequest* Ptr;
             MemoryRequest()
             {
                 sem_init(&wait, 0, 0);
@@ -115,29 +135,118 @@ class BuddyAllocator {
             sem_t wait;
             BlockPtr request;
         };
-      
-        struct freeListHead {
-            freeListHead()
-            {
-                Nrequested = 0;
-                pthread_mutex_init(&lock, NULL);
-            }
-            size_t Nrequested;
-            queue<MemoryRequest*> waitingRequests;
-            list<BlockPtr> freeBlocks;
-            pthread_mutex_t lock;
+        
+        class freeListHead {
+            public:
+                freeListHead()
+                {
+                    Nrequested = 0;
+                    pthread_mutex_init(&levelLock, NULL);
+                    pthread_mutex_init(&freeBlockLock, NULL);
+                    pthread_mutex_init(&waitingRequestsLock, NULL);
+                }
+                size_t Nrequested;
+                void addRequest(MemoryRequest* request)
+                {
+                    pthread_mutex_lock(&waitingRequestsLock);
+                    waitingRequests.push(request);
+                    pthread_mutex_unlock(&waitingRequestsLock);
+                }
+
+                MemoryRequest* getRequest()
+                {
+                    pthread_mutex_lock(&waitingRequestsLock);
+                    MemoryRequest* request = waitingRequests.front();
+                    waitingRequests.pop();
+                    pthread_mutex_unlock(&waitingRequestsLock);
+                    return request;
+                }
+
+                size_t pendingRequests()
+                {
+                    pthread_mutex_lock(&waitingRequestsLock);
+                    size_t requests = waitingRequests.size();
+                    pthread_mutex_unlock(&waitingRequestsLock);
+                    return requests;
+
+                }
+
+                BlockPtr getFreeBlock()
+                {
+                    pthread_mutex_lock(&freeBlockLock);
+                    BlockPtr freeBlock = freeBlocks.front();
+                    freeBlocks.pop_front();
+                    pthread_mutex_unlock(&freeBlockLock);
+                    assert(freeBlock != 0);
+                    return freeBlock;
+                }
+
+                void removeFreeBlock(BlockPtr block)
+                {
+                    pthread_mutex_lock(&freeBlockLock);
+                    freeBlocks.remove(block);
+                    pthread_mutex_unlock(&freeBlockLock);
+                }
+
+                bool freeBlockIsEmpty()
+                {
+                    pthread_mutex_lock(&freeBlockLock);
+                    bool empty = freeBlocks.empty();
+                    pthread_mutex_unlock(&freeBlockLock);
+                    return empty;
+
+                }
+
+                bool findFreeBlock(BlockPtr freeBlock)
+                {
+                    bool found = false;
+                    pthread_mutex_lock(&freeBlockLock);
+                    if(find(freeBlocks.begin(), freeBlocks.end(), freeBlock) 
+                            != freeBlocks.end())
+                    {
+                        found = true;
+                    }
+                    found = false;
+                    pthread_mutex_unlock(&freeBlockLock);
+                    return found;
+
+                }
+
+                void addFreeBlock(BlockPtr freeBlock)
+                {
+                    assert(freeBlock != 0);
+                    pthread_mutex_lock(&freeBlockLock);
+                    {
+                        freeBlocks.push_back(freeBlock);
+                    }
+                    pthread_mutex_unlock(&freeBlockLock);
+                }  
+                void lock()
+                {
+                    pthread_mutex_lock(&levelLock);
+                }
+
+                void unlock()
+                {
+                    pthread_mutex_unlock(&levelLock);
+                }
+
+            private:
+                queue<MemoryRequest*> waitingRequests;
+                list<BlockPtr> freeBlocks;
+                pthread_mutex_t levelLock;
+                pthread_mutex_t freeBlockLock; 
+                pthread_mutex_t waitingRequestsLock;
         };
 
         freeListHead freeList[freeListOrder+1];
 
-        inline bool buddyIsFree(BlockPtr& M, BlockPtr& Buddy, size_t level)
+        bool buddyIsFree(BlockPtr& M, BlockPtr& Buddy, size_t level)
         {
             ///TODO: Is there a cleaner way to do this, and avoid the casts?
             //static_cast<size_t>, doesn't work
             BlockPtr BuddySA = (BlockPtr)((size_t)M ^ level_to_size(level));
-            if(find(freeList[level].freeBlocks.begin(), 
-                        freeList[level].freeBlocks.end(), BuddySA) 
-                    != freeList[level].freeBlocks.end())
+            if(freeList[level].findFreeBlock(BuddySA))
             {
                 Buddy = BuddySA;
                 return true;
@@ -145,15 +254,6 @@ class BuddyAllocator {
             return false;
         }
 
-        void lock(size_t level)
-        {
-            pthread_mutex_lock(&freeList[level].lock);
-        }
-
-        void unlock(size_t level)
-        {
-            pthread_mutex_unlock(&freeList[level].lock);
-        }
 
         void allocateBlock(BlockPtr& p, size_t level)
         {
@@ -162,20 +262,20 @@ class BuddyAllocator {
                 //Clean up the freeList requests before we freak out
                 for(size_t i = 0; i < freeListOrder; ++i)
                 {
-                    freeList[i].waitingRequests.pop();
+                    freeList[i].getRequest();
                 }
                 throw std::bad_alloc();
             }
-            lock(level);
-            if(freeList[level].freeBlocks.empty())
+            freeList[level].lock();
+            if(freeList[level].freeBlockIsEmpty())
             {
                 //No blocks, so wait until some are available
                 MemoryRequest selfPending;
-                freeList[level].waitingRequests.push(&selfPending);
-                if(freeList[level].waitingRequests.size() > freeList[level].Nrequested)
+                freeList[level].addRequest(&selfPending);
+                if(freeList[level].pendingRequests() > freeList[level].Nrequested)
                 {
                     freeList[level].Nrequested += 2;
-                    unlock(level);
+                    freeList[level].unlock();
                     splitBlock(level + 1);
                     sem_wait(&selfPending.wait);
                     p = selfPending.request;
@@ -183,24 +283,35 @@ class BuddyAllocator {
             }
             else
             {
-                p = freeList[level].freeBlocks.front();
-                freeList[level].freeBlocks.pop_front();
-                unlock(level);
+                p = freeList[level].getFreeBlock();
+#if 1
+                pthread_t id = pthread_self();
+                stringstream s;
+                s << "{ " << __LINE__ << "[" << id << "] Level: " << level << " "<< p << "}" << endl;
+                cerr << s.str();
+#endif
+                freeList[level].unlock();
             }
+#ifndef NDEBUG
             if(p == 0)
-                cerr << "Level: " << level << endl;
+            {
+                pthread_t id = pthread_self();
+                stringstream s;
+                s << "{ " << __LINE__ << "[" << id << "] Level: " << level << " "<< p << "}" << endl;
+                cerr << s.str();
+            }
+#endif
             assert(p != 0);
         }
 
         void releaseBlock(BlockPtr M, size_t level)
         {
-            lock(level);
-            if(freeList[level].waitingRequests.size() > 0)
+            freeList[level].lock();
+            if(freeList[level].pendingRequests() > 0)
             {
                 //Give to the blocked request if possible
-                MemoryRequest* P = freeList[level].waitingRequests.front();
-                freeList[level].waitingRequests.pop();
-                unlock(level);
+                MemoryRequest* P = freeList[level].getRequest();
+                freeList[level].unlock();
                 P->request = M;
                 sem_post(&P->wait);
             }
@@ -210,16 +321,16 @@ class BuddyAllocator {
                 if(buddyIsFree(M, buddy, level))
                 {
                     //Coalesce
-                    freeList[level].freeBlocks.remove(buddy);
-                    unlock(level);
+                    freeList[level].removeFreeBlock(buddy);
+                    freeList[level].unlock();
                     combine(M, buddy);
                     releaseBlock(min(M,buddy), level+1);
                 }
                 else
                 {
                     //Don't combine
-                    freeList[level].freeBlocks.push_back(M);
-                    unlock(level);
+                    freeList[level].addFreeBlock(M);
+                    freeList[level].unlock();
                 }
             }
         }
@@ -235,32 +346,30 @@ class BuddyAllocator {
             allocateBlock(p, level);
             BlockPtr M = p;
             BlockPtr B = p+(level_to_size(level)/2);
-            lock(level-1);
+            freeList[level-1].lock();
             freeList[level-1].Nrequested -= 2;
             /* Satisfying the request for 2 */
-            if(freeList[level-1].waitingRequests.size() > 0)
+            if(freeList[level-1].pendingRequests() > 0)
             {
-                MemoryRequest* remembered = freeList[level-1].waitingRequests.front();
+                MemoryRequest* remembered = freeList[level-1].getRequest();
                 remembered->request = M;
-                freeList[level-1].waitingRequests.pop();
 
-                if(freeList[level-1].waitingRequests.size() >0)
+                if(freeList[level-1].pendingRequests() > 0)
                 {
-                    MemoryRequest* remembered = freeList[level-1].waitingRequests.front();
+                    MemoryRequest* remembered = freeList[level-1].getRequest();
                     remembered->request = B;
-                    freeList[level-1].waitingRequests.pop();
                 }
                 else
                 {
-                    freeList[level-1].freeBlocks.push_back(B); //Add B to the free list
+                    freeList[level-1].addFreeBlock(B); //Add B to the free list
                 }
-                unlock(level-1);
+                freeList[level-1].unlock();
                 sem_post(&remembered->wait);
             }
             else
             {
                 cout << "I made it here" << endl;
-                unlock(level-1);
+                freeList[level-1].unlock();
                 releaseBlock(combine(M,B), level);
             }
 
