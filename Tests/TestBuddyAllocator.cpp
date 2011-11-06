@@ -1,3 +1,10 @@
+/**
+ * @brief Unit Tests for BuddyAllocator
+ *
+ * @par
+ * Copyright Jeremy Wright (c) 2011
+ * Creative Commons Attribution-ShareAlike 3.0 Unported License.
+ */
 #include <gtest/gtest.h>
 #include "BuddyAllocator.hpp"
 #include <omp.h>

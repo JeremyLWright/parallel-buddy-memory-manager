@@ -109,7 +109,7 @@ class BuddyAllocator {
         struct MemoryRequest {
             MemoryRequest()
             {
-                sem_init(&wait, 0, 1);
+                sem_init(&wait, 0, 0);
                 request = NULL;
             }
             sem_t wait;
