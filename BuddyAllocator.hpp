@@ -13,7 +13,6 @@
 #include <list>
 #include <cmath>
 #include <cassert>
-#include <boost/integer/static_log2.hpp>
 #include <queue>
 #include <pthread.h>
 #include <algorithm>
@@ -27,22 +26,25 @@ using std::find;
 /**
  * @warning This class is may not be used as a base class.
  */
-template <typename Block, size_t numBlocks=200>
+template <typename Block, size_t freeListOrder=7>
 class BuddyAllocator {
     friend class TestBuddyAllocator;
     public:
         // The enum is just a way to get the size value at compile time instead
         // of at runtime. 
         enum compileConstants {
-            blockSize=sizeof(Block),
-            freeListOrder = ((boost::static_log2<numBlocks>::value))
+            blockSize=sizeof(Block)
         };
          
         typedef Block* BlockPtr;
         typedef Block const * BlockConstPtr;
-            
+        size_t numBlocks;
+
         BuddyAllocator()
         {
+            numBlocks = static_cast<size_t>(pow(2,freeListOrder));
+
+            memoryPool = new Block[numBlocks];
             freeList[freeListOrder].freeBlocks.push_back(memoryPool);
         }
 
@@ -52,9 +54,14 @@ class BuddyAllocator {
         }
 
         // Return the maximum allocatable size
-        size_t max_size() const throw()
+        size_t max_size() const
         {
-            return sizeof(sizeof(Block)*numBlocks);
+            return sizeof(memoryPool);
+        }
+
+        size_t max_blocks() const
+        {
+            return  numBlocks; 
         }
 
         //Allocate but do not initialize num elements of type T
@@ -75,7 +82,7 @@ class BuddyAllocator {
     private:
        //Make the Buddy Allocator uncopyable
         template <typename U>
-            BuddyAllocator(const BuddyAllocator<U, numBlocks>&) throw()
+            BuddyAllocator(const BuddyAllocator<U, freeListOrder>&) throw()
             {
             }
  
@@ -97,7 +104,7 @@ class BuddyAllocator {
             return size;
         }
 
-        Block memoryPool[numBlocks];
+        BlockPtr memoryPool;
 
         struct MemoryRequest {
             MemoryRequest()
@@ -126,7 +133,7 @@ class BuddyAllocator {
         inline bool buddyIsFree(BlockPtr& M, BlockPtr& Buddy, size_t level)
         {
             ///TODO: Is there a cleaner way to do this, and avoid the casts?
-            //Static_cast, doesn't work
+            //static_cast<size_t>, doesn't work
             BlockPtr BuddySA = (BlockPtr)((size_t)M ^ level_to_size(level));
             if(find(freeList[level].freeBlocks.begin(), 
                         freeList[level].freeBlocks.end(), BuddySA) 
@@ -150,7 +157,10 @@ class BuddyAllocator {
 
         void allocateBlock(BlockPtr& p, size_t level)
         {
-            assert(level <= freeListOrder);
+            if(level > freeListOrder)
+            {
+                throw std::bad_alloc();
+            }
             bool doSplit = false;
             lock(level);
             if(freeList[level].freeBlocks.empty())
@@ -246,6 +256,7 @@ class BuddyAllocator {
             }
             else
             {
+                cout << "I made it here" << endl;
                 unlock(level-1);
                 releaseBlock(combine(M,B), level);
             }

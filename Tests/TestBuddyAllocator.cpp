@@ -14,17 +14,7 @@ class TestBuddyAllocator : public ::testing::Test {
         }
 
         BuddyAllocator<int> myAlloc;
-        BuddyAllocator<int, 1> shortAlloc;
-        virtual void invariant()
-        {
-             //The freeBlocks have a maximum number of elements
-            for(int i = 0; i < myAlloc.freeListOrder; ++i)
-            {
-                EXPECT_LE(myAlloc.freeList[i].freeBlocks.size(), i);
-            }
-        
-        }
-};
+      };
 
 TEST_F(TestBuddyAllocator, SingleItem)
 {
@@ -44,15 +34,13 @@ TEST_F(TestBuddyAllocator, InitialFreeBlocks)
 
 TEST_F(TestBuddyAllocator, NormalTest)
 {
-    invariant();
     EXPECT_EQ(1, 1);
 }
 
 TEST_F(TestBuddyAllocator, VectorMultipleItem)
 {
-    BuddyAllocator<int>::BlockPtr NulBlockPtr = NULL;
+    BuddyAllocator<int, 7>::BlockPtr NulBlockPtr = NULL;
     int number = 128;
-    invariant();
     BuddyAllocator<int>::BlockPtr handles[number];
     for(int i=0; i < number; i++)
     {
@@ -66,19 +54,27 @@ TEST_F(TestBuddyAllocator, VectorMultipleItem)
         EXPECT_EQ(*(handles[i]), i);
     }
 }
-/*
-TEST(AllocatorInterface, Vector1Item)
+
+TEST_F(TestBuddyAllocator, MaxAllocation)
 {
-    BuddyAllocator<int> myAlloc;
-    list<int, BuddyAllocator<int> > myList;
-    myList.push_back(5);
-    EXPECT_EQ(myList.back(), 5);
+    BuddyAllocator<int, 10> LargeAlloc;
+
+    BuddyAllocator<int, 10>::BlockPtr NulBlockPtr = NULL;
+    int number = static_cast<int>(pow(2,10));
+    BuddyAllocator<int, 10>::BlockPtr handles[number];
+    for(int i=0; i < number; i++)
+    {
+        handles[i] = LargeAlloc.allocate(1);
+        ASSERT_NE(handles[i], NulBlockPtr);
+        *(handles[i]) = i;
+    }
+
+    for(int i = 0; i < number; i++)
+    {
+        EXPECT_EQ(*(handles[i]), i);
+    }
+    
+    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc);
+
 }
-
-TEST(FreeList, StaticSize)
-{
-    BuddyAllocator<int, 200> myAlloc;
-    EXPECT_EQ(myAlloc.freeListOrder, 7);
-}*/
-
 
