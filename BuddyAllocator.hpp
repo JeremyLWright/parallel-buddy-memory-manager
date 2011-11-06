@@ -187,6 +187,8 @@ class BuddyAllocator {
                 freeList[level].freeBlocks.pop_front();
                 unlock(level);
             }
+            if(p == 0)
+                cerr << "Level: " << level << endl;
             assert(p != 0);
         }
 
@@ -244,6 +246,7 @@ class BuddyAllocator {
                 
                 if(freeList[level-1].waitingRequests.size() >0)
                 {
+                    MemoryRequest* remembered = freeList[level-1].waitingRequests.front();
                     remembered->request = B;
                     freeList[level-1].waitingRequests.pop();
                 }

@@ -78,3 +78,30 @@ TEST_F(TestBuddyAllocator, MaxAllocation)
 
 }
 
+TEST_F(TestBuddyAllocator, Deallocate)
+{
+    BuddyAllocator<int, 10> LargeAlloc;
+
+    BuddyAllocator<int, 10>::BlockPtr NulBlockPtr = NULL;
+    int number = static_cast<int>(pow(2,10));
+    BuddyAllocator<int, 10>::BlockPtr handles[number];
+    for(int i=0; i < number; i++)
+    {
+        handles[i] = LargeAlloc.allocate(1);
+        ASSERT_NE(handles[i], NulBlockPtr);
+        *(handles[i]) = i;
+    }
+
+    for(int i = 0; i < number; i++)
+    {
+        EXPECT_EQ(*(handles[i]), i);
+    }
+    
+    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc); //Max out the allocator
+
+    //Release 1 block
+    LargeAlloc.deallocate(handles[0], 1);
+    EXPECT_THROW(LargeAlloc.allocate(1), std::bad_alloc); //Max out the allocator
+
+}
+
