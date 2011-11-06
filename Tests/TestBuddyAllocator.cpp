@@ -51,16 +51,17 @@ TEST_F(TestBuddyAllocator, NormalTest)
 TEST_F(TestBuddyAllocator, VectorMultipleItem)
 {
     BuddyAllocator<int>::BlockPtr NulBlockPtr = NULL;
+    int number = 128;
     invariant();
-    BuddyAllocator<int>::BlockPtr handles[10];
-    for(int i=0; i < 10; i++)
+    BuddyAllocator<int>::BlockPtr handles[number];
+    for(int i=0; i < number; i++)
     {
         handles[i] = myAlloc.allocate(1);
         ASSERT_NE(handles[i], NulBlockPtr);
         *(handles[i]) = i;
     }
 
-    for(int i = 0; i < 10; i++)
+    for(int i = 0; i < number; i++)
     {
         EXPECT_EQ(*(handles[i]), i);
     }
