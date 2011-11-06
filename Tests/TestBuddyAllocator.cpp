@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "BuddyAllocator.hpp"
-
+#include <omp.h>
 #include <list>
 using std::list;
 class TestBuddyAllocator : public ::testing::Test {
@@ -102,5 +102,28 @@ TEST_F(TestBuddyAllocator, Deallocate)
     //Release 1 block
     LargeAlloc.deallocate(handles[0], 1);
     EXPECT_NO_THROW(LargeAlloc.allocate(1)); //Allocate 1 more object to max out the allocator
+}
+
+TEST_F(TestBuddyAllocator, MultiThreaded)
+{
+    size_t const order = 10;
+    BuddyAllocator<int, order> LargeAlloc;
+    int number = static_cast<int>(pow(2,order));
+    int const chunk = number%omp_get_num_threads();
+    BuddyAllocator<int, order>::BlockPtr NulBlockPtr = NULL;
+    BuddyAllocator<int, order>::BlockPtr handles[number];
+
+#pragma openmp parallel for schedule(dynamic, chunk)
+    for(int i=0; i < number; i++)
+    {
+        handles[i] = LargeAlloc.allocate(1);
+        ASSERT_NE(handles[i], NulBlockPtr);
+        *(handles[i]) = i;
+    }
+        for(int i = 0; i < number; i++)
+    {
+        EXPECT_EQ(*(handles[i]), i);
+    }
+
 }
 
