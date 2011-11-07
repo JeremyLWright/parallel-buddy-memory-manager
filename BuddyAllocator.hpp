@@ -125,17 +125,44 @@ class BuddyAllocator {
 
         BlockPtr memoryPool;
 
-        struct MemoryRequest {
-            typedef MemoryRequest* Ptr;
-            MemoryRequest()
-            {
-                sem_init(&wait, 0, 0);
-                request = NULL;
-            }
-            sem_t wait;
-            BlockPtr request;
+        class MemoryRequest {
+            public:
+                MemoryRequest()
+                {
+                    pthread_mutex_init(&pendingRequest, NULL);
+                    request = NULL;
+                }
+                void putBlock(BlockPtr block)
+                {
+                    assert(block != 0);
+                    request = block;
+                    pthread_mutex_unlock(&pendingRequest);
+                }
+
+                BlockPtr getBlock()
+                {
+                    pthread_mutex_lock(&pendingRequest);
+                    if(request == 0) ///TODO Why did this need a double lock?
+                        pthread_mutex_lock(&pendingRequest);
+#if 0
+                    if(request == 0)
+                    {
+                        pthread_t id = pthread_self();
+                        stringstream s;
+                        s << "{ " << __LINE__ << "[" << id << "]" << " "<< request << "}" << endl;
+                        cerr << s.str();
+                    }
+#endif
+
+                    assert(request != 0);
+                    return request;
+                }
+
+            private:
+                pthread_mutex_t pendingRequest;
+                BlockPtr request;
         };
-        
+
         class freeListHead {
             public:
                 freeListHead()
@@ -257,6 +284,7 @@ class BuddyAllocator {
 
         void allocateBlock(BlockPtr& p, size_t level)
         {
+            bool dosplit = false;
             if(level > freeListOrder)
             {
                 //Clean up the freeList requests before we freak out
@@ -274,17 +302,18 @@ class BuddyAllocator {
                 freeList[level].addRequest(&selfPending);
                 if(freeList[level].pendingRequests() > freeList[level].Nrequested)
                 {
+                    dosplit = true;
                     freeList[level].Nrequested += 2;
-                    freeList[level].unlock();
-                    splitBlock(level + 1);
-                    sem_wait(&selfPending.wait);
-                    p = selfPending.request;
                 }
+                freeList[level].unlock();
+                if(dosplit)
+                    splitBlock(level + 1);
+                p = selfPending.getBlock();
             }
             else
             {
                 p = freeList[level].getFreeBlock();
-#if 1
+#if 0
                 pthread_t id = pthread_self();
                 stringstream s;
                 s << "{ " << __LINE__ << "[" << id << "] Level: " << level << " "<< p << "}" << endl;
@@ -292,7 +321,7 @@ class BuddyAllocator {
 #endif
                 freeList[level].unlock();
             }
-#ifndef NDEBUG
+#if 0
             if(p == 0)
             {
                 pthread_t id = pthread_self();
@@ -312,8 +341,7 @@ class BuddyAllocator {
                 //Give to the blocked request if possible
                 MemoryRequest* P = freeList[level].getRequest();
                 freeList[level].unlock();
-                P->request = M;
-                sem_post(&P->wait);
+                P->putBlock(M);
             }
             else
             {
@@ -351,20 +379,17 @@ class BuddyAllocator {
             /* Satisfying the request for 2 */
             if(freeList[level-1].pendingRequests() > 0)
             {
-                MemoryRequest* remembered = freeList[level-1].getRequest();
-                remembered->request = M;
+                freeList[level-1].getRequest()->putBlock(M);
 
                 if(freeList[level-1].pendingRequests() > 0)
                 {
-                    MemoryRequest* remembered = freeList[level-1].getRequest();
-                    remembered->request = B;
+                    freeList[level-1].getRequest()->putBlock(B);
                 }
                 else
                 {
                     freeList[level-1].addFreeBlock(B); //Add B to the free list
                 }
                 freeList[level-1].unlock();
-                sem_post(&remembered->wait);
             }
             else
             {
