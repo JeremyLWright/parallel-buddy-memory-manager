@@ -2,7 +2,11 @@
 namespace {
 static const unsigned short DWORD_BITS = 8;
 
-static unsigned char flag(const unsigned char);
+unsigned char flag(const unsigned char bit_index)
+{
+    return ((unsigned char) 128) >> bit_index;
+}
+
 }
 SieveOfAtkin::SieveOfAtkin(const unsigned max_num)
 {
@@ -117,10 +121,5 @@ unsigned SieveOfAtkin::next()
     return 0;
 }
 
-
-inline unsigned char flag(const unsigned char bit_index)
-{
-    return ((unsigned char) 128) >> bit_index;
-}
 
 

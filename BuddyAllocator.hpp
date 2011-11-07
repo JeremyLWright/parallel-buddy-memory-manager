@@ -66,28 +66,11 @@ class BuddyAllocator {
         {
             return  numBlocks; 
         }
-#if USE_BIG_LOCK
-        pthread_mutex_t bigLock;
-#endif
         //Allocate but do not initialize num elements of type T
         BlockPtr allocate(size_t num, BlockConstPtr hint = 0)
         {
             BlockPtr p = 0;
-#if USE_BIG_LOCK
-            pthread_mutex_lock(&bigLock);
-            try
-            {
-#endif
             allocateBlock(p, size_to_level(num));
-#if USE_BIG_LOCK
-            } catch(std::bad_alloc& e)
-            {
-
-                pthread_mutex_unlock(&bigLock);
-                throw e;
-            }
-            pthread_mutex_unlock(&bigLock);
-#endif
             assert(p != 0);
             return p;
         }

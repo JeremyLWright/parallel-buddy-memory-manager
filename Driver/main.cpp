@@ -7,6 +7,7 @@
  */
 
 #include "BuddyAllocator.hpp"
+#include "SieveOfAtkin.hpp"
 #include <iostream>
 #include <pthread.h>
 #include <sstream>
@@ -14,9 +15,8 @@
 #include <cstdlib>
 #include <exception>
 #include <stdexcept>
-using std::cerr;
-using std::cout;
-using std::endl;
+#include <sstream>
+using namespace std;
 /**
  * Uses a C++ streams to convert a string representation to some other type.
  *
@@ -37,7 +37,15 @@ BuddyAllocator<int, 10> processesAllocator;
 void Process()
 {
     processesAllocator.allocate(10);
-    sleep(1);
+    SieveOfAtkin primes(100);
+    stringstream s;
+    int const number = 100 + rand() % 100; //Random number between 100 and 200
+    for(int i = 0; i < number; ++i)
+    {
+        s << "Thread: " << pthread_self() << " " << static_cast<float>(i)/static_cast<float>(number)*100 << "% complete." << endl;
+        cout << s.str();
+        primes.next();
+    }
     pthread_exit(0);
 }
 
