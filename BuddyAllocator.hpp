@@ -109,7 +109,17 @@ class BuddyAllocator {
             assert(level <= freeListOrder);
             return size;
         }
-
+#ifdef INSTRUMENT
+        size_t* getRequestsHighWater()
+        {
+            size_t hw[freeListOrder];
+            for(int i = 0; i < freeListOrder; ++i)
+            {
+                hw[i] = freeList[i].pendingRequestsMax;
+            }
+            return hw;
+        }
+#endif
         BlockPtr memoryPool;
 
         class MemoryRequest {
@@ -148,6 +158,9 @@ class BuddyAllocator {
                     pthread_mutex_init(&levelLock, NULL);
                     pthread_mutex_init(&freeBlockLock, NULL);
                     pthread_mutex_init(&waitingRequestsLock, NULL);
+#ifdef INSTRUMENT
+                    pendingRequestsMax = 0;
+#endif
                 }
                 size_t Nrequested;
                 void addRequest(MemoryRequest* request)
@@ -160,6 +173,10 @@ class BuddyAllocator {
                 MemoryRequest* getRequest()
                 {
                     pthread_mutex_lock(&waitingRequestsLock);
+#ifdef INSTRUMENT
+                    if(pendingRequestsMax < waitingRequests.size())
+                        pendingRequestsMax = waitingRequests.size();
+#endif
                     MemoryRequest* request = waitingRequests.front();
                     waitingRequests.pop();
                     pthread_mutex_unlock(&waitingRequestsLock);
@@ -235,6 +252,9 @@ class BuddyAllocator {
                     pthread_mutex_unlock(&levelLock);
                 }
 
+#ifdef INSTRUMENT
+                size_t pendingRequestsMax;
+#endif
             private:
                 queue<MemoryRequest*> waitingRequests;
                 list<BlockPtr> freeBlocks;

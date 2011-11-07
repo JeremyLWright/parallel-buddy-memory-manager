@@ -42,7 +42,7 @@ void Process()
     int const number = 100 + rand() % 100; //Random number between 100 and 200
     for(int i = 0; i < number; ++i)
     {
-#ifdef OUTPUT_PROGRESS
+#if 0
         s << "Thread: " << pthread_self() << " " << static_cast<float>(i)/static_cast<float>(number)*100 << "% complete." << endl;
         cout << s.str();
 #endif
