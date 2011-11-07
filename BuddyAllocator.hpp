@@ -26,6 +26,8 @@ using std::min;
 using std::find;
 /**
  * @warning This class is may not be used as a base class.
+ * This classes allocates 2^freeListOrder*sizeof(Block) bytes to be allocated
+ * across multiple processes. This allocator is threadsafe.
  */
 template <typename Block, size_t freeListOrder=7>
 class BuddyAllocator {
@@ -44,9 +46,6 @@ class BuddyAllocator {
         BuddyAllocator()
         {
             numBlocks = static_cast<size_t>(pow(2,freeListOrder));
-#if USE_BIG_LOCK
-            pthread_mutex_init(&bigLock, 0);
-#endif
             memoryPool = new Block[numBlocks];
             freeList[freeListOrder].addFreeBlock(memoryPool);
         }
@@ -59,13 +58,15 @@ class BuddyAllocator {
         // Return the maximum allocatable size
         size_t max_size() const
         {
-            return sizeof(memoryPool);
+            return blockSize*numBlocks;
         }
-
+        
+        // Return the maximum number of blocks.
         size_t max_blocks() const
         {
-            return  numBlocks; 
+            return numBlocks; 
         }
+
         //Allocate but do not initialize num elements of type T
         BlockPtr allocate(size_t num, BlockConstPtr hint = 0)
         {
@@ -84,11 +85,14 @@ class BuddyAllocator {
     private:
        //Make the Buddy Allocator uncopyable
         template <typename U>
-            BuddyAllocator(const BuddyAllocator<U, freeListOrder>&) throw()
+            BuddyAllocator(const BuddyAllocator<U, freeListOrder>&) 
             {
             }
- 
-        BuddyAllocator(BuddyAllocator const &) throw()
+        /**
+         * Copying the Buddy Allocator doesn't make sense. The pointers are
+         * intimately tied to the caller.
+         */ 
+        BuddyAllocator(BuddyAllocator const &)
         {
         }
 
@@ -127,16 +131,6 @@ class BuddyAllocator {
                     pthread_mutex_lock(&pendingRequest);
                     if(request == 0) ///TODO Why did this need a double lock?
                         pthread_mutex_lock(&pendingRequest);
-#if 0
-                    if(request == 0)
-                    {
-                        pthread_t id = pthread_self();
-                        stringstream s;
-                        s << "{ " << __LINE__ << "[" << id << "]" << " "<< request << "}" << endl;
-                        cerr << s.str();
-                    }
-#endif
-
                     assert(request != 0);
                     return request;
                 }
@@ -296,23 +290,8 @@ class BuddyAllocator {
             else
             {
                 p = freeList[level].getFreeBlock();
-#if 0
-                pthread_t id = pthread_self();
-                stringstream s;
-                s << "{ " << __LINE__ << "[" << id << "] Level: " << level << " "<< p << "}" << endl;
-                cerr << s.str();
-#endif
                 freeList[level].unlock();
             }
-#if 0
-            if(p == 0)
-            {
-                pthread_t id = pthread_self();
-                stringstream s;
-                s << "{ " << __LINE__ << "[" << id << "] Level: " << level << " "<< p << "}" << endl;
-                cerr << s.str();
-            }
-#endif
             assert(p != 0);
         }
 

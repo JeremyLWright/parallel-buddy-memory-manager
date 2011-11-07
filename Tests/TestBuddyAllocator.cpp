@@ -134,3 +134,9 @@ TEST_F(TestBuddyAllocator, MultiThreaded)
 
 }
 
+TEST_F(TestBuddyAllocator, MaxSize)
+{
+    size_t const order = 10;
+    BuddyAllocator<int, order> a;
+    EXPECT_EQ(a.max_size(), pow(2,order)*sizeof(int));
+}
