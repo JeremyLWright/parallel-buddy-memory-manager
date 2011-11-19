@@ -49,7 +49,7 @@ void Process()
     int* block = processesAllocator.allocate(10);
     SieveOfAtkin primes(100);
     stringstream s;
-    int const number = 0 + rand() % allocatorOrder; //Random number between 0 and 10
+    int const number = 0 + rand() % 10; //Random number between 0 and 10
     for(int i = 0; i < number; ++i)
     {
 #if 0
