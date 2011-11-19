@@ -3,12 +3,20 @@ project(ParallelBinaryBuddy)
 find_package(GTest)
 SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3 -ggdb -Wall -fprofile-arcs -ftest-coverage -fopenmp -fpermissive")
 SET(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -fopenmp -fpermissive")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -pg -fpermissive -DINSTRUMENT")
-SET(LDFLAGS "-fprofile-arcs -ftest-coverage")
 include_directories(.)
 
-add_executable(buddyDriver Driver/main.cpp Driver/SieveOfAtkin.cpp)
-target_link_libraries(buddyDriver pthread)
+add_executable(buddyDriver5 Driver/main.cpp Driver/SieveOfAtkin.cpp)
+SET_TARGET_PROPERTIES(buddyDriver5 PROPERTIES COMPILE_DEFINITIONS  ALLOCATOR5)
+
+add_executable(buddyDriver10 Driver/main.cpp Driver/SieveOfAtkin.cpp)
+SET_TARGET_PROPERTIES(buddyDriver10 PROPERTIES COMPILE_DEFINITIONS ALLOCATOR10)
+
+add_executable(buddyDriver15 Driver/main.cpp Driver/SieveOfAtkin.cpp)
+SET_TARGET_PROPERTIES(buddyDriver15 PROPERTIES COMPILE_DEFINITIONS ALLOCATOR15)
+
+target_link_libraries(buddyDriver5 pthread)
+target_link_libraries(buddyDriver10 pthread)
+target_link_libraries(buddyDriver15 pthread)
 
 
 if(GTEST_FOUND)

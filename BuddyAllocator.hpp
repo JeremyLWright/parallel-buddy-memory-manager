@@ -117,7 +117,15 @@ class BuddyAllocator {
     {
         releaseBlock(p, size_to_level(num));
     }
-
+#ifdef INSTRUMENT
+    void getRequestsHighWater(vector<int>& requests)
+    {
+        for(int i = 0; i < freeListOrder; ++i)
+        {
+            requests.push_back(freeList[i].pendingRequestsMax);
+        }
+    }
+#endif
     private:
     //Make the Buddy Allocator uncopyable
     template <typename U>
@@ -145,17 +153,7 @@ class BuddyAllocator {
         assert(level <= freeListOrder);
         return size;
     }
-#ifdef INSTRUMENT
-    size_t* getRequestsHighWater()
-    {
-        size_t hw[freeListOrder];
-        for(int i = 0; i < freeListOrder; ++i)
-        {
-            hw[i] = freeList[i].pendingRequestsMax;
-        }
-        return hw;
-    }
-#endif
+
     BlockPtr memoryPool;
 
     class MemoryRequest {

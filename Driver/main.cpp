@@ -6,6 +6,7 @@
  * Creative Commons Attribution-ShareAlike 3.0 Unported License.
  */
 
+#define INSTRUMENT
 #include "BuddyAllocator.hpp"
 #include "SieveOfAtkin.hpp"
 #include <iostream>
@@ -32,21 +33,30 @@ bool from_string(T& t, const std::string& s, std::ios_base& (*f)(std::ios_base&)
 	return !(iss >> f >> t).fail();
 }
 
-BuddyAllocator<int, 10> processesAllocator;
+#ifdef ALLOCATOR5
+size_t const allocatorOrder = 5;
+#elif defined(ALLOCATOR10)
+size_t const allocatorOrder = 10;
+#elif defined(ALLOCATOR15)
+size_t const allocatorOrder = 15;
+#else
+#error "You Must Define a Size"
+#endif
+BuddyAllocator<int, allocatorOrder> processesAllocator;
 
 void Process()
 {
-    processesAllocator.allocate(10);
+    int* block = processesAllocator.allocate(10);
     SieveOfAtkin primes(100);
     stringstream s;
-    int const number = 100 + rand() % 100; //Random number between 100 and 200
+    int const number = 0 + rand() % allocatorOrder; //Random number between 0 and 10
     for(int i = 0; i < number; ++i)
     {
 #if 0
         s << "Thread: " << pthread_self() << " " << static_cast<float>(i)/static_cast<float>(number)*100 << "% complete." << endl;
         cout << s.str();
 #endif
-        primes.next();
+        block[i] = primes.next();
     }
     pthread_exit(0);
 }
@@ -78,7 +88,16 @@ int main(int argc, const char *argv[])
         pthread_join(processes[i], NULL);
         cout << "Process " << i << " completed." << endl;
     }
+    vector<int> highwater;
+    processesAllocator.getRequestsHighWater(highwater);
+    for(vector<int>::const_iterator i = highwater.begin();
+            i != highwater.end();
+            ++i)
+    {
 
+        cout << *i << " ";
+    }
+    cout << endl;
 
     return 0;
 }
