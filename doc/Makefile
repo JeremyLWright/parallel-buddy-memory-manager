@@ -1,4 +1,11 @@
-Report.pdf: Report.tex figures
+Report.pdf: Report.tex NormalizedSpeedComp.png MegaTexture.bib
+	pdflatex Report.tex
+	bibtex Report.aux
+	pdflatex Report.tex
 	pdflatex Report.tex
 
-figures: figures/class.png
+NormalizedSpeedComp.png: MutexAllocSpeed.dat PlatformSpeed.dat SpinAllocSpeed.dat
+	octave HighWater.m
+	octave SpeedComp.m
+
+

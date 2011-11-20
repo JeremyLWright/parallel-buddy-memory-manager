@@ -1,44 +1,193 @@
-\documentclass[10pt]{article}
+\documentclass[12pt]{article}
+\usepackage{url}
 \usepackage{graphicx}
 \usepackage{fullpage}
-\title{Parallel Buddy: The Friendly Memory Manager}
+\title{Parallel Binary Buddy: The Friendly Memory Manager}
 \author{Jeremy Wright}
 
 \begin{document}
 \maketitle
 
-\begin{abstract}
-k-alloc has the slab.\\
-Fragments are the enemy.\\
-Each block needs a buddy.
-
-
-Fragmentation the
-allocator's sin. Each byte
-A buddy, A friend
- 
-
-\end{abstract}
+\begin{verse}
+Fragmentation the\\
+allocator's sin. Each byte\\
+A buddy, A friend\\
+--- by Jeremy Wright
+\end{verse}
 
 \section{Introduction}
-Um, something happened here.
+Memory management is pervasive in all forms of software, not just operating
+systems. Embedded Systems, when dynamic memory is acceptable, tend to use memory
+pools to the head.  Standard desktop applications tend
+to use the platform's std::new or malloc.  Memory managers allow the programmer 
+to tightly control application memory, in a way that flows with the rest of the
+system's design.  A perfect example is the MegaTexture feature in id Software's
+new id Tech 5 graphics engine \cite{SIGGRAPH2009}.  
 
+In a video game, the system has 3 levels of
+memory:  Non-Volatile Storage, System Memory (RAM), and Video RAM.  Video RAM is
+by far the most fastest, and most scarce, ergo the most precious.  id Tech
+5 implemented a memory manger that streams graphics data between the 3 memory
+layers.  The Memory manager allows the programmer to load enormous textures,
+textures which cannot physically fit into Video RAM.  The Memory Manager treats
+the System RAM, and finally the Hard Drive as virtual memory for the Video card.
+Using spacial locality, the memory manager transfers the correct textures in
+varying levels of detail into the video card, so the system always has the
+correct textures ready to go.  This fantastic system allows id Software to run
+incredibly high resolution screens at 60 frames per second.
 
-\section{STL Allocators}
-The Binary Buddy memory allocator is unsuitable as a general purpose STL
-allocators since it does not maintain the memory interface for all STL
-containers. For example the STL vector guarantees that the successive items in
-the vector will be stored contiguously in memory. In a sense, raw pointers are
-permitted to access a vector, since the binary buddy does not make this
-guarantee, it is unsuitable for the vector.
+id software's MegaTexture is just one example of how a custom memory manager can
+simplify, and improve the quality of one's software.  For this project we 
+implemented a parallel memory manager using the Binary Buddy allocation scheme.  This
+ scheme is used in tandem with the slab allocator, to provide dynamic
+memory for kernel objects in the linux kernel \cite[p.~134]{kalloc}.
+
+\section{Architecture}
+The parallel architecture is largely influenced by the design offered by Johnson
+and Davis in their paper \cite{johnson}. I used the POSIX threading library to
+add parallelism to the allocator.  As a deviation from the design offered by
+Johnson, I used templates to prevent internal fragmentation. In my
+implementation one passes in the C++ type as an argument to the allocator.  The
+allocator, using templates, dynamically creates blocks of that size,
+guaranteeing that allocations will be optimized for that specific size.
+
+Interestingly, this had a bigger affect than just space-efficiency.  The
+templates offered compile time generated pointers of the correct block size,
+regardless of the type.  Since I wasn't translating everything in number of
+bytes, this made much of the code easier to understand.  The template system
+created a custom block type which simplified manipulating blocks of memory over
+raw byte pointers.
 
 \section{Performance}
+I measured the performance of the allocator using 2 metrics: overhead and
+allocations per second.  The former, I defined as the number of pending
+allocation requests.  Time spent blocked on a syncronization primative which
+another thread allocates memory, is detrimental to the performance of the
+allocator.  The latter, raw query speed, was easier to measure.  
+
+I setup 3 tests using allocators of various sizes.  I allocated each allocator
+until full, and timed the performance (See Tests/TestInstrument.cpp).  See
+Table~\ref{tab:perf} for results.
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{l c r}
+        Scheme & Allocation Speed (ms) & GB/Sec\\
+        std::new & 1.3 & 102.9\\
+        Spinlock & 5.9 & 22.2\\
+        Mutex & 12.4 & 2.6\\
+    \end{tabular}
+    \caption{Allocation Performance}
+    \label{tab:perf}
+\end{table}
+
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{SpeedComparisons.png}
+        \caption{Raw Allocation performance.}
+        \label{fig:speed}
+    \end{center}
+\end{figure*}
+
+To measure overhead in the allocator, I instrumented the request pending queues
+to track a ``high-water mark''. I tracked this overhead over various sized
+allocators, and found that the smallest levels never had waiting blocks.
+I expected this for the smallest levels, yet consistently the smallest 3 levels
+never requested an allocation to wait (Figure~\ref{fig:combinedlevels}). The largest 
+levels have at least 1 pending request, from the initial recursive split.
+
+\subsection{Beating std::new}
+I wanted to out perform std::new. new is fast. I was not successful; however
+more intrigue was the affect pthreads primitaves play in the performance of an
+application. My initial implementation using pthread\_mutex\_t to synchronize
+threads resulted in a 10x slow-down over std::new.  Simply replacing the mutexes
+with pthread\_spinlock\_t resulted in a 2x speedup over mutexes as shown in
+Figure~\ref{fig:norm_speedup}.  
+
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{NormalizedSpeedComp.png}
+        \caption{On a multicore machine, spinlocks result in better performance
+        over mutexes}
+        \label{fig:norm_speedup}
+    \end{center}
+\end{figure*}
+
+\section{Extending the STL}
+The Binary Buddy memory allocator is unsuitable as a general purpose STL
+allocator since it does not maintain the memory interface for all STL
+containers. For example, the STL vector guarantees that the successive items in
+the vector will be stored contiguously in memory. In a sense, raw pointers are
+permitted to access a vector, since the binary buddy does not make this
+guarantee, it is unsuitable for the vector \cite[p.~727]{cppstl}. However, the STL Allocator is
+sufficient for the STL list. STL Allocators also allow for an interesting
+performance boost by offering locality hints to the allocator \cite[p.~733]{cppstl}.
+These hints allow upper level software to suggest efficient memory locations do
+lower level allocation algorithms.  These hints offered as memory addresses, can
+boost performance up to 13\% over the default FreeBSD allocator\cite{locality}.
+
+More interestingly than performance, is the additional capabilities one has when
+using a custom allocator over a default platform one.  By manually managing the
+heap, the developer has access to all memory use by the system. One could
+serialize that memory to disk, and provide a fast initialization mechanism for
+application reboots.  Additionally, since the allocator is setup as a gatekeeper
+for all application memory, its easier to log and track who is requesting what.
+While this would hamper performance it is an interesting debugging tool for
+difficult to reproduce multi-threaded memory bugs.
+
+Lastly, the allocator can be used as a mock library, improving unit testing.
+Since the allocator is simply a class of behavior, under the developers control,
+its easier to simulate out of memory errors and other difficult to reproduce
+situations.  
+
+\section{Conclusion}
+The binary buddy system is a conceptually simply scheme which completely
+eliminates external fragmentation.  When combined with C++ templates, all
+fragmentation may be eliminated.  Offering the application developer 
+space-efficient access to dynamic memory.
+
+Custom allocators are difficult. Difficult to implement, more difficult to out
+perform your platforms default allocator. However, the reasons for custom
+allocators are more than just performance.  Interesting debugging tools, fast
+initialization, and more robust software though better testing are but a few
+enhancements afforded by custom memory allocators. 
+
+\bibliographystyle{plain}
+\bibliography{MegaTexture}
 
 
-\begin{figure*}[h]
-\includegraphics{figures/class.png}
-\caption{Example dot UML.}
-\label{fig:example_uml}
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{combined.png}
+        \label{fig:combinedlevels}
+        \caption{}
+    \end{center}
+\end{figure*}
+
+
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{PendingRequests5Levels.png}
+        \label{fig:level5}
+        \caption{}
+    \end{center}
+\end{figure*}
+
+
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{PendingRequests10Levels.png}
+        \label{fig:level10}
+        \caption{}
+    \end{center}
+\end{figure*}
+
+
+\begin{figure*}
+    \begin{center}
+        \includegraphics[width=\textwidth]{PendingRequests15Levels.png}
+        \label{fig:level15}
+        \caption{}
+    \end{center}
 \end{figure*}
 
 
